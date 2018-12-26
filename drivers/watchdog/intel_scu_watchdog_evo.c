@@ -365,8 +365,8 @@ static int intel_scu_release(struct inode *inode, struct file *file)
 
 	/* Reboot system if requested */
 	if (reset_on_release) {
-		pr_crit("Initiating system reboot.\n");
-		emergency_restart();
+		pr_crit("Supposed to Initiate System Reboot.\n");
+//		emergency_restart();
 	}
 
 	pr_crit("Immediate Reboot Disabled\n");
