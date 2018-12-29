@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0
- *
+// SPDX-License-Identifier: GPL-2.0
+/*
  * Copyright (C) 2015-2018 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  *
  * This is a shell script written in C. It very intentionally still functions like
@@ -7,12 +7,14 @@
  */
 
 #define _GNU_SOURCE
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
 #include <strings.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <ctype.h>
 #include <time.h>
 #include <unistd.h>
@@ -23,8 +25,11 @@
 #include <sys/wait.h>
 #include <sys/param.h>
 
+#ifndef WG_PACKAGE_NAME
+#define WG_PACKAGE_NAME "com.wireguard.android"
+#endif
 #ifndef WG_CONFIG_SEARCH_PATHS
-#define WG_CONFIG_SEARCH_PATHS "/data/misc/wireguard /data/data/com.wireguard.android/files"
+#define WG_CONFIG_SEARCH_PATHS "/data/misc/wireguard /data/data/" WG_PACKAGE_NAME "/files"
 #endif
 
 #define _printf_(x, y) __attribute__((format(printf, x, y)))
@@ -39,6 +44,15 @@ static void *xmalloc(size_t size)
 	if (ret)
 		return ret;
 	perror("Error: malloc");
+	exit(errno);
+}
+
+static void *xcalloc(size_t nmemb, size_t size)
+{
+	void *ret = calloc(nmemb, size);
+	if (ret)
+		return ret;
+	perror("Error: calloc");
 	exit(errno);
 }
 
@@ -119,6 +133,7 @@ static void fclosep(FILE **f)
 }
 #define _cleanup_free_ _cleanup_(freep)
 #define _cleanup_fclose_ _cleanup_(fclosep)
+#define _cleanup_regfree_ _cleanup_(regfree)
 
 #define DEFINE_CMD(name) _cleanup_(free_command_buffer) struct command_buffer name = { 0 };
 
@@ -249,13 +264,15 @@ static void add_if(const char *iface)
 static void del_if(const char *iface)
 {
 	DEFINE_CMD(c);
-	regex_t reg;
+	_cleanup_regfree_ regex_t reg = { 0 };
 	regmatch_t matches[2];
 	char *netid = NULL;
 	_cleanup_free_ char *regex = concat("0xc([0-9a-f]+)/0xcffff lookup ", iface, NULL);
 
 	xregcomp(&reg, regex, REG_EXTENDED);
 
+	cmd("iptables -D OUTPUT -m mark --mark 0x20000 -j ACCEPT -m comment --comment \"wireguard rule %s\"", iface);
+	cmd("ip6tables -D OUTPUT -m mark --mark 0x20000 -j ACCEPT -m comment --comment \"wireguard rule %s\"", iface);
 	cmd("ip link del %s", iface);
 	for (char *ret = cmd_ret(&c, "ip rule show"); ret; ret = cmd_ret(&c, NULL)) {
 		if (!regexec(&reg, ret, ARRAY_SIZE(matches), matches, 0)) {
@@ -277,14 +294,86 @@ static void up_if(unsigned int *netid, const char *iface)
 		*netid = random() & 0xfffe;
 
 	cmd("wg set %s fwmark 0x20000", iface);
+	cmd("iptables -I OUTPUT 1 -m mark --mark 0x20000 -j ACCEPT -m comment --comment \"wireguard rule %s\"", iface);
+	cmd("ip6tables -I OUTPUT 1 -m mark --mark 0x20000 -j ACCEPT -m comment --comment \"wireguard rule %s\"", iface);
 	cndc("interface setcfg %s up", iface);
 	cndc("network create %u vpn 1 1", *netid);
 	cndc("network interface add %u %s", *netid, iface);
 }
 
-static void set_users(unsigned int netid)
+static int compare_uid(const void *a, const void *b)
 {
-	cndc("network users add %u 0-99999", netid);
+	return *(const uid_t *)a - *(const uid_t *)b;
+}
+
+static uid_t *get_uid_list(const char *selected_applications)
+{
+	_cleanup_fclose_ FILE *package_list = NULL;
+	_cleanup_free_ char *line = NULL;
+	uid_t package_uid;
+	size_t line_len = 0, i;
+	const char *comma, *start;
+	uid_t *uid_list;
+
+	if (!selected_applications)
+		return xcalloc(1, sizeof(*uid_list));
+
+	for (i = 1, comma = selected_applications; comma; comma = strchr(comma + 1, ','), ++i);
+	uid_list = xcalloc(i, sizeof(*uid_list));
+	i = 0;
+
+	package_list = fopen("/data/system/packages.list", "r");
+	if (!package_list) {
+		perror("Error: Unable to open package list");
+		exit(errno);
+	}
+
+	while (getline(&line, &line_len, package_list) >= 0) {
+		char *package_name, *package_uid_str, *endptr;
+
+		package_name = line;
+		package_uid_str = strchr(package_name, ' ');
+		if (!package_uid_str)
+			continue;
+		*package_uid_str++ = '\0';
+		*strchrnul(package_uid_str, ' ') = '\0';
+		package_uid = strtoul(package_uid_str, &endptr, 10);
+		if (!package_uid || !*package_uid_str || *endptr)
+			continue;
+
+		for (start = selected_applications; comma = strchrnul(start, ','), *start; start = comma + 1) {
+			ptrdiff_t token_len = comma - start;
+
+			if (token_len && strlen(package_name) == token_len && !strncmp(start, package_name, token_len))
+				uid_list[i++] = package_uid;
+		}
+	}
+	qsort(uid_list, i, sizeof(*uid_list), compare_uid);
+	return uid_list;
+}
+
+static void set_users(unsigned int netid, const char *excluded_applications)
+{
+	_cleanup_free_ uid_t *excluded_uids = get_uid_list(excluded_applications);
+	_cleanup_free_ char *ranges = NULL;
+	char range[22];
+	uid_t start;
+
+	for (start = 0; *excluded_uids; start = *excluded_uids + 1, ++excluded_uids) {
+		if (start > *excluded_uids - 1)
+			continue;
+		else if (start == *excluded_uids - 1)
+			snprintf(range, sizeof(range), "%u", start);
+		else
+			snprintf(range, sizeof(range), "%u-%u", start, *excluded_uids - 1);
+		ranges = concat_and_free(ranges, " ", range);
+	}
+	if (start < 99999) {
+		snprintf(range, sizeof(range), "%u-99999", start);
+		ranges = concat_and_free(ranges, " ", range);
+	}
+
+	cndc("network users add %u %s", netid, ranges);
 }
 
 static void set_dnses(unsigned int netid, const char *dnses)
@@ -345,7 +434,7 @@ static int get_route_mtu(const char *endpoint)
 	DEFINE_CMD(c_route);
 	DEFINE_CMD(c_dev);
 	regmatch_t matches[2];
-	regex_t regex_mtu, regex_dev;
+	_cleanup_regfree_ regex_t regex_mtu = { 0 }, regex_dev = { 0 };
 	char *route, *mtu, *dev;
 
 	xregcomp(&regex_mtu, "mtu ([0-9]+)", REG_EXTENDED);
@@ -379,7 +468,7 @@ static int get_route_mtu(const char *endpoint)
 static void set_mtu(const char *iface, unsigned int mtu)
 {
 	DEFINE_CMD(c_endpoints);
-	regex_t regex_endpoint;
+	_cleanup_regfree_ regex_t regex_endpoint = { 0 };
 	regmatch_t matches[2];
 	int endpoint_mtu, next_mtu;
 
@@ -423,8 +512,61 @@ static void set_routes(const char *iface, unsigned int netid)
 		if (!start)
 			continue;
 		++start;
-		for (char *allowedip = strtok(start, " \n"); allowedip; allowedip = strtok(NULL, " \n"))
+		for (char *allowedip = strtok(start, " \n"); allowedip; allowedip = strtok(NULL, " \n")) {
+			if (!strcmp(allowedip, "(none)"))
+				continue;
 			add_route(iface, netid, allowedip);
+		}
+	}
+}
+
+static void maybe_block_ipv6(const char *iface)
+{
+	DEFINE_CMD(c_endpoints);
+	DEFINE_CMD(c_listenport);
+	bool has_ipv6 = false, has_all_none = true;
+	char *value;
+	unsigned long listenport;
+
+	for (char *endpoint = cmd_ret(&c_endpoints, "wg show %s endpoints", iface); endpoint; endpoint = cmd_ret(&c_endpoints, NULL)) {
+		char *start = strchr(endpoint, '\t');
+
+		if (!start)
+			continue;
+		++start;
+		if (start[0] != '(')
+			has_all_none = false;
+		if (start[0] == '[')
+			has_ipv6 = true;
+	}
+	if (has_ipv6 || has_all_none)
+		return;
+
+	cmd("ip link set up dev %s", iface);
+	value = cmd_ret(&c_listenport, "wg show %s listen-port", iface);
+	if (!value)
+		goto set_back_down;
+	listenport = strtoul(value, NULL, 10);
+	if (listenport > UINT16_MAX || !listenport)
+		goto set_back_down;
+	cmd("ip6tables -I INPUT 1 -p udp --dport %lu -j DROP -m comment --comment \"wireguard rule %s\"", listenport, iface);
+set_back_down:
+	cmd("ip link set down dev %s", iface);
+}
+
+static void maybe_unblock_ipv6(const char *iface)
+{
+	regmatch_t matches[2];
+	_cleanup_regfree_ regex_t reg = { 0 };
+	_cleanup_free_ char *regex = concat("^-A (.* --comment \"wireguard rule ", iface, "\"[^\n]*)\n*$", NULL);
+	DEFINE_CMD(c);
+
+	xregcomp(&reg, regex, REG_EXTENDED);
+	for (char *rule = cmd_ret(&c, "ip6tables-save"); rule; rule = cmd_ret(&c, NULL)) {
+		if (!regexec(&reg, rule, ARRAY_SIZE(matches), matches, 0)) {
+			rule[matches[1].rm_eo] = '\0';
+			cmd("ip6tables -D %s", &rule[matches[1].rm_so]);
+		}
 	}
 }
 
@@ -454,8 +596,8 @@ static void broadcast_change(void)
 {
 	const char *pkg = getenv("CALLING_PACKAGE");
 
-	if (!pkg || strcmp(pkg, "com.wireguard.android"))
-		cmd("am broadcast -a com.wireguard.android.action.REFRESH_TUNNEL_STATES com.wireguard.android");
+	if (!pkg || strcmp(pkg, WG_PACKAGE_NAME))
+		cmd("am broadcast -a com.wireguard.android.action.REFRESH_TUNNEL_STATES " WG_PACKAGE_NAME);
 }
 
 static void print_search_paths(FILE *file, const char *prefix)
@@ -480,7 +622,8 @@ static void cmd_usage(const char *program)
 		"  - Address: may be specified one or more times and contains one or more\n"
 		"    IP addresses (with an optional CIDR mask) to be set for the interface.\n"
 		"  - MTU: an optional MTU for the interface; if unspecified, auto-calculated.\n"
-		"  - DNS: an optional DNS server to use while the device is up.\n\n"
+		"  - DNS: an optional DNS server to use while the device is up.\n"
+		"  - ExcludedApplications: optional applications to exclude from the tunnel.\n\n"
 		"  See wg-quick(8) for more info and examples.\n");
 }
 
@@ -494,7 +637,7 @@ static void cmd_up_cleanup(void)
 	free(cleanup_iface);
 }
 
-static void cmd_up(const char *iface, const char *config, unsigned int mtu, const char *addrs, const char *dnses)
+static void cmd_up(const char *iface, const char *config, unsigned int mtu, const char *addrs, const char *dnses, const char *excluded_applications)
 {
 	DEFINE_CMD(c);
 	unsigned int netid = 0;
@@ -509,12 +652,13 @@ static void cmd_up(const char *iface, const char *config, unsigned int mtu, cons
 
 	add_if(iface);
 	set_config(iface, config);
+	maybe_block_ipv6(iface);
 	set_addr(iface, addrs);
 	up_if(&netid, iface);
 	set_dnses(netid, dnses);
 	set_routes(iface, netid);
 	set_mtu(iface, mtu);
-	set_users(netid);
+	set_users(netid, excluded_applications);
 	broadcast_change();
 
 	free(cleanup_iface);
@@ -542,17 +686,18 @@ static void cmd_down(const char *iface)
 	}
 
 	del_if(iface);
+	maybe_unblock_ipv6(iface);
 	broadcast_change();
 	exit(EXIT_SUCCESS);
 }
 
-static void parse_options(char **iface, char **config, unsigned int *mtu, char **addrs, char **dnses, const char *arg)
+static void parse_options(char **iface, char **config, unsigned int *mtu, char **addrs, char **dnses, char **excluded_applications, const char *arg)
 {
 	_cleanup_fclose_ FILE *file = NULL;
 	_cleanup_free_ char *line = NULL;
 	_cleanup_free_ char *filename = NULL;
 	_cleanup_free_ char *paths = strdup(WG_CONFIG_SEARCH_PATHS);
-	regex_t regex_iface, regex_conf;
+	_cleanup_regfree_ regex_t regex_iface = { 0 }, regex_conf = { 0 };
 	regmatch_t matches[2];
 	struct stat sbuf;
 	size_t n = 0;
@@ -601,7 +746,7 @@ static void parse_options(char **iface, char **config, unsigned int *mtu, char *
 	if (sbuf.st_mode & 0007)
 		fprintf(stderr, "Warning: `%s' is world accessible\n", filename);
 
-	filename[matches[1].rm_eo] = 0;
+	filename[matches[1].rm_eo] = '\0';
 	*iface = xstrdup(&filename[matches[1].rm_so]);
 
 	while (getline(&line, &n, file) >= 0) {
@@ -627,6 +772,9 @@ static void parse_options(char **iface, char **config, unsigned int *mtu, char *
 			} else if (!strncasecmp(clean, "DNS=", 4) && j > 4) {
 				*dnses = concat_and_free(*dnses, ",", clean + 4);
 				continue;
+			} else if (!strncasecmp(clean, "ExcludedApplications=", 21) && j > 4) {
+				*excluded_applications = concat_and_free(*excluded_applications, ",", clean + 21);
+				continue;
 			} else if (!strncasecmp(clean, "MTU=", 4) && j > 4) {
 				*mtu = atoi(clean + 4);
 				continue;
@@ -651,17 +799,18 @@ int main(int argc, char *argv[])
 	_cleanup_free_ char *config = NULL;
 	_cleanup_free_ char *addrs = NULL;
 	_cleanup_free_ char *dnses = NULL;
+	_cleanup_free_ char *excluded_applications = NULL;
 	unsigned int mtu;
 
 	if (argc == 2 && (!strcmp(argv[1], "help") || !strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")))
 		cmd_usage(argv[0]);
 	else if (argc == 3 && !strcmp(argv[1], "up")) {
 		auto_su(argc, argv);
-		parse_options(&iface, &config, &mtu, &addrs, &dnses, argv[2]);
-		cmd_up(iface, config, mtu, addrs, dnses);
+		parse_options(&iface, &config, &mtu, &addrs, &dnses, &excluded_applications, argv[2]);
+		cmd_up(iface, config, mtu, addrs, dnses, excluded_applications);
 	} else if (argc == 3 && !strcmp(argv[1], "down")) {
 		auto_su(argc, argv);
-		parse_options(&iface, &config, &mtu, &addrs, &dnses, argv[2]);
+		parse_options(&iface, &config, &mtu, &addrs, &dnses, &excluded_applications, argv[2]);
 		cmd_down(iface);
 	} else {
 		cmd_usage(argv[0]);

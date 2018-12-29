@@ -15,7 +15,7 @@
 # ││fd00::1/24         ││   │    │127.0.0.1:1   127.0.0.1:2│   │   ││fd00::2/24         ││
 # │└───────────────────┘│   │    │[::]:1        [::]:2     │   │   │└───────────────────┘│
 # └─────────────────────┘   │    └─────────────────────────┘   │   └─────────────────────┘
-#                           └──────────────────────────────────┘                          
+#                           └──────────────────────────────────┘
 #
 # After the topology is prepared we run a series of TCP/UDP iperf3 tests between the
 # wireguard peers in $ns1 and $ns2. Note that $ns0 is the endpoint for the wg0
@@ -202,20 +202,20 @@ n1 ping -W 1 -c 1 192.168.241.2
 # Test that crypto-RP filter works
 n1 wg set wg0 peer "$pub2" allowed-ips 192.168.241.0/24
 exec 4< <(n1 ncat -l -u -p 1111)
-nmap_pid=$!
+ncat_pid=$!
 waitncatudp $netns1
 n2 ncat -u 192.168.241.1 1111 <<<"X"
 read -r -N 1 -t 1 out <&4 && [[ $out == "X" ]]
-kill $nmap_pid
+kill $ncat_pid
 more_specific_key="$(pp wg genkey | pp wg pubkey)"
 n1 wg set wg0 peer "$more_specific_key" allowed-ips 192.168.241.2/32
 n2 wg set wg0 listen-port 9997
 exec 4< <(n1 ncat -l -u -p 1111)
-nmap_pid=$!
+ncat_pid=$!
 waitncatudp $netns1
 n2 ncat -u 192.168.241.1 1111 <<<"X"
 ! read -r -N 1 -t 1 out <&4 || false
-kill $nmap_pid
+kill $ncat_pid
 n1 wg set wg0 peer "$more_specific_key" remove
 [[ $(n1 wg show wg0 endpoints) == "$pub2	[::1]:9997" ]]
 
@@ -437,6 +437,30 @@ done
 config+=( "[Peer]" "PublicKey=$(wg genkey)" "AllowedIPs=255.2.3.4/32,abcd::255/128" )
 n0 wg setconf wg0 <(printf '%s\n' "${config[@]}")
 n0 wg showconf wg0 > /dev/null
+ip0 link del wg0
+
+allowedips=( )
+for i in {1..197}; do
+        allowedips+=( abcd::$i )
+done
+saved_ifs="$IFS"
+IFS=,
+allowedips="${allowedips[*]}"
+IFS="$saved_ifs"
+ip0 link add wg0 type wireguard
+n0 wg set wg0 peer "$pub1"
+n0 wg set wg0 peer "$pub2" allowed-ips "$allowedips"
+{
+	read -r pub allowedips
+	[[ $pub == "$pub1" && $allowedips == "(none)" ]]
+	read -r pub allowedips
+	[[ $pub == "$pub2" ]]
+	i=0
+	for _ in $allowedips; do
+		((++i))
+	done
+	((i == 197))
+} < <(n0 wg show wg0 allowed-ips)
 ip0 link del wg0
 
 ! n0 wg show doesnotexist || false
