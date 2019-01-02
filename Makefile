@@ -694,16 +694,25 @@ KBUILD_CFLAGS   += $(call cc-option,-fconserve-stack)
 # use the deterministic mode of AR if available
 KBUILD_ARFLAGS := $(call ar-option,D)
 
-# Use Following Flags if CC is GCC 6.x.y+ for Compatibilty
+# Needed to unbreak GCC 6.x and above
 ifeq ($(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 6), 1)
-	KBUILD_CFLAGS	+= -fno-openacc -Wno-misleading-indentation -fdiagnostics-color=always
+    KBUILD_CFLAGS   += $(call cc-option,-fno-openacc) \
+                       $(call cc-option,-Wno-misleading-indentation) \
+                       $(call cc-option,-fdiagnostics-color=always)
 endif
 
 # Needed to unbreak GCC 7.x and above
 ifeq ($(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 7), 1)
-	KBUILD_CFLAGS   += $(call cc-option,-fno-store-merging) \
+    KBUILD_CFLAGS   += $(call cc-option,-fno-store-merging) \
                        $(call cc-option,-Wno-duplicate-decl-specifier) \
-					   $(call cc-option,-Wno-int-in-bool-context)
+                       $(call cc-option,-Wno-int-in-bool-context)
+endif
+
+# Needed to Unbreak GCC 8.x and above
+ifeq ($(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 8), 1)
+    KBUILD_CFLAGS   += $(call cc-option,-Wno-stringop-truncation) \
+                       $(call cc-option,-Wno-format-truncation) \
+                       $(call cc-option,-Wno-restrict)
 endif
 
 # check for 'asm goto'
