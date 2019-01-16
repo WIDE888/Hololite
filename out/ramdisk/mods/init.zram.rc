@@ -7,6 +7,11 @@ on property:ro.config.zram=true
 	# Enable swaps described in the fstab
 	swapon_all /fstab.mofd_v1
 
+	# KSM Configs
+	write /sys/kernel/mm/ksm/run 1
+	write /sys/kernel/mm/ksm/sleep_millisecs 2500
+	write /sys/kernel/mm/ksm/pages_to_scan 200
+
 	write /sys/devices/virtual/block/zram0/max_comp_streams 1
 	write /sys/devices/virtual/block/zram0/disksize 536870912
 
