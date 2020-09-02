@@ -572,8 +572,8 @@ static int sfi_cpufreq_cpu_init(struct cpufreq_policy *policy)
 #endif
 
 #ifdef CPU_ATOM_UNDERCLOCK
-	/* Default Min Freq to State[23/25], 500Mhz */
-	freq_saved.min = perf->states[sfi_cpufreq_num-4].core_frequency * 1000;
+	/* Modified Default Min Freq to State[26/28], 250Mhz */
+	freq_saved.min = perf->states[sfi_cpufreq_num-1].core_frequency * 1000;
 #endif
 
 	/* table init */
