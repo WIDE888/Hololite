@@ -199,7 +199,7 @@ static const struct gpu_utilization_record a_available_state_freq[] = {
 					{DFRGX_FREQ_320_MHZ, 0x9},
 					{DFRGX_FREQ_266_MHZ, 0xB},
 					{DFRGX_FREQ_213_MHZ, 0xE},
-					{DFRGX_FREQ_200_MHZ, 0xF}
+					{DFRGX_FREQ_200_MHZ, 0xF},
 					{DFRGX_FREQ_177_MHZ, 0x11},
 					{DFRGX_FREQ_160_MHZ, 0x13},
 					{DFRGX_FREQ_133_MHZ, 0x17},
