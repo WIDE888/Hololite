@@ -23,7 +23,8 @@
  *
  * Authors:
  *    Javier Torres Castillo <javier.torres.castillo@intel.com>
- *    Nutcasev1.5 <tab.andsupp@gmail.com>
+ *    Nutcasev1.5 <tab.andsupp@gmail.com> 
+ *    WIDE888 <starry.knight1208@gmail.com>
  */
 #include "df_rgx_defs.h"
 #include "dev_freq_debug.h"
@@ -38,9 +39,13 @@ int target_loads[] = {
 	80, /* 400 Mhz */
 	65, /* 355 Mhz */
 	55, /* 320 Mhz */
-	25, /* 266 Mhz */
-	10, /* 213 Mhz */
-	0,  /* 200 Mhz, Needs to be 0 */
+	35, /* 266 Mhz */
+	25, /* 213 Mhz */
+	20, /* 200 Mhz */
+	15, /* 177 Mhz */
+	10, /* 160 Mhz */
+	5,  /* 133 Mhz */
+	0,  /* 106 Mhz, Needs to be 0 */
 
 /* Performance Configuration */
 	55, /* 533 Mhz */
@@ -50,7 +55,11 @@ int target_loads[] = {
 	5, /* 320 Mhz SKIP */
 	5, /* 266 Mhz SKIP */
 	5, /* 213 Mhz SKIP */
-	0,  /* 200 Mhz, Needs to be 0 */
+	5, /* 200 Mhz SKIP */
+	5, /* 177 Mhz SKIP */
+	5, /* 160 Mhz SKIP */
+	5, /* 133 Mhz SKIP */
+	0, /* 106 Mhz, Needs to be 0 */
 
 /* Powersave Configuration */
 	100, /* 533 Mhz */
@@ -58,10 +67,13 @@ int target_loads[] = {
 	100, /* 400 Mhz SKIP */
 	90, /* 355 Mhz */
 	65, /* 320 Mhz */
-	25, /* 266 Mhz */
+	35, /* 266 Mhz */
 	15, /* 213 Mhz */
-	0  /* 200 Mhz, Needs to be 0 */
-
+	10, /* 200 Mhz */
+	5, /* 177 Mhz */
+	5, /* 160 Mhz SKIP */
+	5, /* 133 Mhz SKIP */
+	0  /* 106 Mhz, Needs to be 0 */
 };
 
 /* End Table */
