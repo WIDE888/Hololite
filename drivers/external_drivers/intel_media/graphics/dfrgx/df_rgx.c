@@ -514,10 +514,10 @@ void df_rgx_init_available_freq_table(struct device *dev)
 	int i = 0;
 	int n_states = sku_levels();
 
-	for (i = 0; i < n_states; i++) {
+	for (i = 0; i < n_states; i++)
 		opp_add(dev, a_available_state_freq[i].freq, voltage_gfx);
-	}
 }
+
 /**
  * tcd_get_available_states() - thermal cooling device
  * callback get_available_states.
@@ -794,17 +794,9 @@ static int df_rgx_busfreq_probe(struct platform_device *pdev)
 			.get_max_state = tcd_get_max_state,
 			.get_cur_state = tcd_get_cur_state,
 			.set_cur_state = tcd_set_cur_state,
-#if defined(THERMAL_DEBUG)
-			.get_force_state_override =
-				tcd_get_force_state_override,
-			.set_force_state_override =
-				tcd_set_force_state_override,
-#else
-			.get_force_state_override = NULL,
-			.set_force_state_override = NULL,
-#endif
-			.get_available_states =
-				tcd_get_available_states,
+			.get_requested_power = NULL,
+			.state2power = NULL,
+			.power2state = NULL,
 		};
 		struct thermal_cooling_device *tcdhdl;
 
