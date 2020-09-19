@@ -794,9 +794,8 @@ static int df_rgx_busfreq_probe(struct platform_device *pdev)
 			.get_max_state = tcd_get_max_state,
 			.get_cur_state = tcd_get_cur_state,
 			.set_cur_state = tcd_set_cur_state,
-			.get_requested_power = NULL,
-			.state2power = NULL,
-			.power2state = NULL,
+			.get_available_states =
+				tcd_get_available_states,			
 		};
 		struct thermal_cooling_device *tcdhdl;
 
