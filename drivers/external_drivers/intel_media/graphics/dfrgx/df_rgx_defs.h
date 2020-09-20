@@ -38,10 +38,10 @@
  * THERMAL_COOLING_DEVICE_MAX_STATE - The maximum cooling state that this
  * driver (as a thermal cooling device by reducing frequency) supports.
  */
-#define THERMAL_COOLING_DEVICE_MAX_STATE	12
-#define NUMBER_OF_LEVELS			12
+#define THERMAL_COOLING_DEVICE_MAX_STATE	10
+#define NUMBER_OF_LEVELS			10
 #define NUMBER_OF_LEVELS_TNG_A0			4
-#define NUMBER_OF_LEVELS_MAX_FUSE		13
+#define NUMBER_OF_LEVELS_MAX_FUSE		11
 
 #define DF_RGX_FREQ_KHZ_MIN             106000
 #define DF_RGX_FREQ_KHZ_MAX             533000
@@ -56,8 +56,6 @@ typedef enum _DFRGX_FREQ_ {
 	DFRGX_FREQ_106_MHZ = 106000,
 	DFRGX_FREQ_133_MHZ = 133000,
 	DFRGX_FREQ_160_MHZ = 160000,
-	DFRGX_FREQ_177_MHZ = 177000,
-	DFRGX_FREQ_200_MHZ = 200000,
 	DFRGX_FREQ_213_MHZ = 213000,
 	DFRGX_FREQ_266_MHZ = 266000,
 	DFRGX_FREQ_320_MHZ = 320000,
@@ -199,8 +197,6 @@ static const struct gpu_utilization_record a_available_state_freq[] = {
 					{DFRGX_FREQ_320_MHZ, 0x9},
 					{DFRGX_FREQ_266_MHZ, 0xB},
 					{DFRGX_FREQ_213_MHZ, 0xE},
-					{DFRGX_FREQ_200_MHZ, 0xF},
-					{DFRGX_FREQ_177_MHZ, 0x11},
 					{DFRGX_FREQ_160_MHZ, 0x13},
 					{DFRGX_FREQ_133_MHZ, 0x17},
 					{DFRGX_FREQ_106_MHZ, 0x1d}
