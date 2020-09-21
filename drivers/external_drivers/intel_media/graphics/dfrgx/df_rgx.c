@@ -749,7 +749,7 @@ static int df_rgx_busfreq_probe(struct platform_device *pdev)
 
 	/* Set min/max freq depending on stepping/SKU */
 	if (is_tng_a0) {
-		df->min_freq = DFRGX_FREQ_200_MHZ;
+		df->min_freq = DFRGX_FREQ_106_MHZ;
 		df->max_freq = DFRGX_FREQ_320_MHZ;
 	}
 	if (df_rgx_is_max_fuse_set()) {
